@@ -260,6 +260,27 @@ void print_scode() {
 			printf("%.4x ", code[cur]);
 		cur++;
 	}
+
+	if ((cur % 8) != 0)
+		puts("");
+}
+
+void print_sin() {
+	uint16_t* code = challenge_program.SIN;
+	uint16_t cur = 0;
+
+	assert(challenge_program.SIN != NULL);
+
+	while (cur < challenge_program.SIN_len) {
+		if ((cur % 8) == 7)
+			printf("%.4x\n", code[cur]);
+		else
+			printf("%.4x ", code[cur]);
+		cur++;
+	}
+
+	if ((cur % 8) != 0)
+		puts("");
 }
 
 struct bounded_buf read_entire_file(const char* filepath) {
@@ -366,6 +387,10 @@ int main(int argc, char* argv[]) {
 	puts("=== SCODE HEXDUMP ===");
 	puts("");
 	print_scode();
+	puts("");
+	puts("=== SIN HEXDUMP ===");
+	puts("");
+	print_sin();
 	puts("");
 	puts("=== SCODE LISTING ===");
 	puts("");
