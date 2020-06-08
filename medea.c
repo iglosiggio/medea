@@ -141,8 +141,9 @@ void print_opcodes() {
 
 	while (cur < code_len) {
 		struct medea_instr instr = instr_from_bits(code[cur]);
-		unsigned opcode_name_idx = instr.OPCODE;
-		unsigned has_second_word = 0;
+		uint16_t opcode_name_idx = instr.OPCODE;
+		uint16_t has_second_word = 0;
+		uint16_t immediates      = 0;
 
 		if (opcode_name_idx > MEDEA_OPCODE_END)
 			opcode_name_idx = MEDEA_OPCODE_END;
@@ -173,6 +174,12 @@ void print_opcodes() {
 			printf("\t| %x %x %x %x", args.idx0, args.idx1, args.idx2);
 			cur += 1;
 		}
+
+		if (instr.OPCODE == ICPY) {
+			printf("\t| %x", args_from_bits(code[cur]));
+			cur += 1;
+		}
+
 
 		puts("");
 	}
