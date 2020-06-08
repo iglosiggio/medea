@@ -85,6 +85,12 @@ int medea_opcode_argcount[] = {
 	/* MEDEA_OPCODE_END */ 0
 };
 
+int medea_opcode_uses_sign[] = {
+	[INC]  = 1, 1, 1, 1, 1, 1, 1,
+	[RSHF] = 1,
+	[RCPT] = 1, 1
+};
+
 const char* medea_opcode_name[] = {
 	"HALT", "NOOP", "INC", "DEC", "ADD", "SUB", "MUL", "DIC", "ADDC",
 	"SUBC", "READ", "WRIT", "CPY", "MCPY", "ICPY", "CMP", "AND", "OR",
@@ -103,7 +109,7 @@ enum medea_reg {
 };
 
 const char* medea_reg_name[] = {
-	" RNIL", "   RX", "   RY", "   RZ", "RTRGT", "RSTAT", "RCALL"
+	"RNIL", "RX", "RY", "RZ", "RTRGT", "RSTAT", "RCALL"
 };
 
 const char* str_for_reg(enum medea_reg reg) {
@@ -170,59 +176,72 @@ void print_opcodes() {
 
 	while (cur < code_len) {
 		struct medea_instr instr = instr_from_bits(code[cur]);
-		uint16_t opcode_name_idx = instr.OPCODE;
+		union {
+			struct medea_args args;
+			enum   medea_reg  arg[3];
+		} args;
+		uint16_t opcode_idx = instr.OPCODE;
 		uint16_t num_args        = 0;
 		uint16_t num_reg_args    = 0;
 		uint16_t immediates      = 0;
 		uint8_t  is_reg_arg[]    = {0, 0, 0};
+		uint8_t  is_sin_ptr[]    = {0, 0, 0};
+		uint8_t  reg_arg_idx     = 0;
 
-		if (opcode_name_idx > MEDEA_OPCODE_END)
-			opcode_name_idx = MEDEA_OPCODE_END;
-		if (medea_opcode_name[opcode_name_idx]  == NULL)
-			opcode_name_idx = MEDEA_OPCODE_END;
+		if (opcode_idx > MEDEA_OPCODE_END)
+			opcode_idx = MEDEA_OPCODE_END;
+		if (medea_opcode_name[opcode_idx]  == NULL)
+			opcode_idx = MEDEA_OPCODE_END;
 
-		printf("[%s]\t", medea_opcode_name[opcode_name_idx]);
-		printf(
-			"%x %x %x %x %x",
-			instr.AFLG0, instr.AFLG1, instr.AFLG2, instr.SIGN,
-			instr.OPCODE
-		);
+		if (medea_opcode_uses_sign[opcode_idx])
+			printf("%s%c\t| ", medea_opcode_name[opcode_idx], instr.SIGN ? 'u' : 's');
+		else
+			printf("%s\t| ", medea_opcode_name[opcode_idx]);
 
 		num_args = medea_opcode_argcount[instr.OPCODE];
-		if (num_args >= 1)
+		if (num_args >= 1) {
 			is_reg_arg[0] = (instr.AFLG0 & 2) == 0;
+			is_sin_ptr[0] = (instr.AFLG0 & 1) == 0;
+		}
 
-		if (num_args >= 2)
+		if (num_args >= 2) {
 			is_reg_arg[1] = (instr.AFLG1 & 2) == 0;
+			is_sin_ptr[2] = (instr.AFLG0 & 1) == 0;
+		}
 
-		if (num_args >= 3)
+		if (num_args >= 3) {
 			is_reg_arg[2] = (instr.AFLG2 & 2) == 0;
+			is_sin_ptr[2] = (instr.AFLG0 & 1) == 0;
+		}
 
 		cur += 1;
 
 		num_reg_args = is_reg_arg[0] + is_reg_arg[1] + is_reg_arg[2];
 		if (num_reg_args >= 1) {
-			struct medea_args args = args_from_bits(code[cur], num_reg_args);
-
-			printf("\t|");
-
-			if (num_reg_args >= 1)
-				printf(" %s", str_for_reg(args.arg0));
-
-			if (num_reg_args >= 2)
-				printf(" %s", str_for_reg(args.arg1));
-
-			if (num_reg_args >= 3)
-				printf(" %s", str_for_reg(args.arg2));
-
+			args.args = args_from_bits(code[cur], num_reg_args);
 			cur += 1;
 		}
 
-		if (instr.OPCODE == ICPY) {
-			printf("\t| %x", code[cur]);
-			cur += 1;
+		if (num_args >= 1) {
+			if (is_reg_arg[0])
+				printf("\t%s", str_for_reg(args.arg[reg_arg_idx++]));
+			else
+				printf("\t%s:%.4x", is_sin_ptr[0] ? "IN" : "MM", code[cur++]);
 		}
 
+		if (num_args >= 2) {
+			if (is_reg_arg[1])
+				printf("\t%s", str_for_reg(args.arg[reg_arg_idx++]));
+			else
+				printf("\t%s:%.4x", is_sin_ptr[1] ? "IN" : "MM", code[cur++]);
+		}
+
+		if (num_args >= 3) {
+			if (is_reg_arg[2])
+				printf("\t%s", str_for_reg(args.arg[reg_arg_idx++]));
+			else
+				printf("\t%s:%.4x", is_sin_ptr[2] ? "IN" : "MM", code[cur++]);
+		}
 
 		puts("");
 	}
