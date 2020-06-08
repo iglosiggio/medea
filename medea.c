@@ -14,9 +14,9 @@ struct bounded_buf {
 };
 
 struct program {
-	void* SIN;
-	void* SCODE;
-	void* SMAIN;
+	uint16_t* SIN;
+	uint16_t* SCODE;
+	uint16_t* SMAIN;
 	uint16_t SIN_len;
 	uint16_t SCODE_len;
 	uint16_t SMAIN_len;
@@ -65,9 +65,10 @@ struct medea_state {
 
 /* Instructions */
 enum medea_opcode {
-	HALT, NOOP, INC, DEC, ADD, SUB, MUL, DIC, ADDC, SUBC, READ, WRIT, CPY, MCPY,
-	ICPY, CMP, AND, OR, CMPL, LSHF, RSHF, PUSH, POP, CFLG, CALL, RTRN, RTRV, RTL,
-	RTR, CIP, BSWP, JUMP, JZRO, JEQU, JLT, JGT, JCRY, JINF, JSE, JSF,
+	HALT, NOOP, INC, DEC, ADD, SUB, MUL, DIC, ADDC, SUBC, READ, WRIT, CPY,
+	MCPY, ICPY, CMP, AND, OR, CMPL, LSHF, RSHF, PUSH, POP, CFLG, CALL,
+	RTRN, RTRV, RTL, RTR, CIP, BSWP, JUMP, JZRO, JEQU, JLT, JGT, JCRY,
+	JINF, JSE, JSF,
 	CZRO = 0x030,
 	CCRY = 0x034,
 	XOR  = 0x40,
@@ -76,8 +77,8 @@ enum medea_opcode {
 };
 
 int medea_opcode_argcount[] = {
-	0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 2, 3, 2, 2, 2, 2, 1, 2, 2, 1, 1, 0, 3, 0,
-	0, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 2, 3, 2, 2, 2, 2, 1, 2, 2, 1, 1, 0,
+	3, 0, 0, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	[CZRO] = 0,
 	[CCRY] = 0,
 	[XOR]  = 2, 2, 2, 2,
@@ -85,61 +86,95 @@ int medea_opcode_argcount[] = {
 };
 
 const char* medea_opcode_name[] = {
-	"HALT", "NOOP", "INC", "DEC", "ADD", "SUB", "MUL", "DIC", "ADDC", "SUBC", "READ", "WRIT", "CPY", "MCPY",
-	"ICPY", "CMP", "AND", "OR", "CMPL", "LSHF", "RSHF", "PUSH", "POP", "CFLG", "CALL", "RTRN", "RTRV", "RTL",
-	"RTR", "CIP", "BSWP", "JUMP", "JZRO", "JEQU", "JLT", "JGT", "JCRY", "JINF", "JSE", "JSF",
+	"HALT", "NOOP", "INC", "DEC", "ADD", "SUB", "MUL", "DIC", "ADDC",
+	"SUBC", "READ", "WRIT", "CPY", "MCPY", "ICPY", "CMP", "AND", "OR",
+	"CMPL", "LSHF", "RSHF", "PUSH", "POP", "CFLG", "CALL", "RTRN", "RTRV",
+	"RTL", "RTR", "CIP", "BSWP", "JUMP", "JZRO", "JEQU", "JLT", "JGT",
+	"JCRY", "JINF", "JSE", "JSF",
 	[CZRO] = "CZRO",
 	[CCRY] = "CCRY",
 	[XOR]  = "XOR",
 	"SWAP", "RCPT", "RCPF",
-	/* MEDEA_OPCODE_END */ "<<ERROR>>"
+	/* MEDEA_OPCODE_END */ "error"
 };
 
-__attribute__((packed))
 struct medea_instr {
-	uint16_t OPCODE : 9;
-	uint8_t  SIGN   : 1;
-	uint8_t  AFLG2  : 2;
-	uint8_t  AFLG1  : 2;
-	uint8_t  AFLG0  : 2;
+	uint8_t  AFLG0;
+	uint8_t  AFLG1;
+	uint8_t  AFLG2;
+	uint8_t  SIGN;
+	uint16_t OPCODE;
 };
 
-__attribute__((packed))
+struct medea_instr instr_from_bits(uint16_t bits) {
+	return (struct medea_instr) {
+		.AFLG0   = bits >> 14 & 0x3,
+		.AFLG1   = bits >> 12 & 0x3,
+		.AFLG2   = bits >> 10 & 0x3,
+		.SIGN    = bits >>  9 & 0x1,
+		.OPCODE  = bits >>  0 & 0x1ff
+	};
+}
+
 struct medea_args {
-	uint8_t idx0 : 4;
-	uint8_t idx1 : 4;
-	uint8_t idx2 : 4;
-	uint8_t reserved : 4;
+	uint8_t idx0;
+	uint8_t idx1;
+	uint8_t idx2;
+	uint8_t reserved;
 };
 
-union medea_data {
-	struct medea_instr instr;
-	struct medea_args args;
-};
+struct medea_args args_from_bits(uint16_t bits) {
+	return (struct medea_args) {
+		.idx0     = bits >> 12 & 0xF,
+		.idx1     = bits >>  8 & 0xF,
+		.idx2     = bits >>  4 & 0xF,
+		.reserved = bits >>  0 & 0x1,
+	};
+}
 
 void print_opcodes() {
-	union medea_data* code = challenge_program.SCODE;
-	uint16_t cur = 0;
+	uint16_t* code     = challenge_program.SCODE;
+	uint16_t  code_len = challenge_program.SCODE_len;
+	uint16_t  cur      = 0;
 
 	assert(challenge_program.SCODE != NULL);
 
-	while (cur < challenge_program.SCODE_len) {
-		struct medea_instr instr = code[cur].instr;
+	while (cur < code_len) {
+		struct medea_instr instr = instr_from_bits(code[cur]);
+		unsigned opcode_name_idx = instr.OPCODE;
+		unsigned has_second_word = 0;
 
+		if (opcode_name_idx > MEDEA_OPCODE_END)
+			opcode_name_idx = MEDEA_OPCODE_END;
+		if (medea_opcode_name[opcode_name_idx]  == NULL)
+			opcode_name_idx = MEDEA_OPCODE_END;
+
+		printf("[%s]\t", medea_opcode_name[opcode_name_idx]);
 		printf(
-			"%d %d %d %d %d\n",
+			"%x %x %x %x %x",
 			instr.AFLG0, instr.AFLG1, instr.AFLG2, instr.SIGN,
 			instr.OPCODE
 		);
 
-		if (instr.OPCODE > MEDEA_OPCODE_END)
-			instr.OPCODE = MEDEA_OPCODE_END;
-		if (medea_opcode_name[instr.OPCODE] == NULL)
-			instr.OPCODE = MEDEA_OPCODE_END;
+		if (medea_opcode_argcount[instr.OPCODE] >= 1)
+			has_second_word |= (instr.AFLG0 & 2) == 0;
 
-		printf("%s\n", medea_opcode_name[instr.OPCODE]);
+		if (medea_opcode_argcount[instr.OPCODE] >= 2)
+			has_second_word |= (instr.AFLG1 & 2) == 0;
+
+		if (medea_opcode_argcount[instr.OPCODE] >= 3)
+			has_second_word |= (instr.AFLG2 & 2) == 0;
 
 		cur += 1;
+
+		if (has_second_word) {
+			struct medea_args args = args_from_bits(code[cur]);
+
+			printf("\t| %x %x %x %x", args.idx0, args.idx1, args.idx2);
+			cur += 1;
+		}
+
+		puts("");
 	}
 }
 
@@ -234,7 +269,6 @@ void load_program(const struct bounded_buf image) {
 		printf("Section %s [SIZE %d]\n", chunk_kinds[kind], length * 2);
 
 		cur += length * 2;
-		printf("cur = %ld\n", cur);
 	}
 }
 
@@ -252,11 +286,20 @@ int main(int argc, char* argv[]) {
 	printf("buf    = %p\n", decompressed.buf);
 	printf("header = %.4s\n", (const char*) decompressed.buf);
 
-	printf("sizeof(struct medea_instr) = %d\n", sizeof(struct medea_instr));
-	printf("sizeof(struct medea_args) = %d\n", sizeof(struct medea_args));
+	printf("sizeof(struct medea_instr) = %ld\n", sizeof(struct medea_instr));
+	printf("sizeof(struct medea_args)  = %ld\n", sizeof(struct medea_args));
 
+	puts("");
+	puts("=== SECTIONS ===");
+	puts("");
 	load_program(decompressed);
+	puts("");
+	puts("=== SCODE HEXDUMP ===");
+	puts("");
 	print_scode();
+	puts("");
+	puts("=== SCODE LISTING ===");
+	puts("");
 	print_opcodes();
 
 	return 0;
