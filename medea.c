@@ -98,6 +98,20 @@ const char* medea_opcode_name[] = {
 	/* MEDEA_OPCODE_END */ "error"
 };
 
+enum medea_reg {
+	RNIL, RX = 1, RY, RZ, RTRGT, RSTAT, RCALL, REND
+};
+
+const char* medea_reg_name[] = {
+	" RNIL", "   RX", "   RY", "   RZ", "RTRGT", "RSTAT", "RCALL"
+};
+
+const char* str_for_reg(enum medea_reg reg) {
+	if (reg >= REND)
+		return medea_reg_name[RNIL];
+	return medea_reg_name[reg];
+}
+
 struct medea_instr {
 	uint8_t  AFLG0;
 	uint8_t  AFLG1;
@@ -117,19 +131,34 @@ struct medea_instr instr_from_bits(uint16_t bits) {
 }
 
 struct medea_args {
-	uint8_t idx0;
-	uint8_t idx1;
-	uint8_t idx2;
-	uint8_t reserved;
+	enum medea_reg arg0;
+	enum medea_reg arg1;
+	enum medea_reg arg2;
 };
 
-struct medea_args args_from_bits(uint16_t bits) {
-	return (struct medea_args) {
-		.idx0     = bits >> 12 & 0xF,
-		.idx1     = bits >>  8 & 0xF,
-		.idx2     = bits >>  4 & 0xF,
-		.reserved = bits >>  0 & 0x1,
-	};
+struct medea_args args_from_bits(uint16_t bits, int num_reg_args) {
+	assert(num_reg_args > 0);
+
+	if (num_reg_args == 1)
+		return (struct medea_args) {
+			.arg0 = bits >>  4 & 0xF,
+			.arg1 = RNIL,
+			.arg2 = RNIL
+		};
+
+	if (num_reg_args == 2)
+		return (struct medea_args) {
+			.arg0 = bits >>  8 & 0xF,
+			.arg1 = bits >>  4 & 0xF,
+			.arg2 = RNIL
+		};
+
+	if (num_reg_args == 3)
+		return (struct medea_args) {
+			.arg0 = bits >> 12 & 0xF,
+			.arg1 = bits >>  8 & 0xF,
+			.arg2 = bits >>  4 & 0xF,
+		};
 }
 
 void print_opcodes() {
@@ -142,8 +171,10 @@ void print_opcodes() {
 	while (cur < code_len) {
 		struct medea_instr instr = instr_from_bits(code[cur]);
 		uint16_t opcode_name_idx = instr.OPCODE;
-		uint16_t has_second_word = 0;
+		uint16_t num_args        = 0;
+		uint16_t num_reg_args    = 0;
 		uint16_t immediates      = 0;
+		uint8_t  is_reg_arg[]    = {0, 0, 0};
 
 		if (opcode_name_idx > MEDEA_OPCODE_END)
 			opcode_name_idx = MEDEA_OPCODE_END;
@@ -157,26 +188,38 @@ void print_opcodes() {
 			instr.OPCODE
 		);
 
-		if (medea_opcode_argcount[instr.OPCODE] >= 1)
-			has_second_word |= (instr.AFLG0 & 2) == 0;
+		num_args = medea_opcode_argcount[instr.OPCODE];
+		if (num_args >= 1)
+			is_reg_arg[0] = (instr.AFLG0 & 2) == 0;
 
-		if (medea_opcode_argcount[instr.OPCODE] >= 2)
-			has_second_word |= (instr.AFLG1 & 2) == 0;
+		if (num_args >= 2)
+			is_reg_arg[1] = (instr.AFLG1 & 2) == 0;
 
-		if (medea_opcode_argcount[instr.OPCODE] >= 3)
-			has_second_word |= (instr.AFLG2 & 2) == 0;
+		if (num_args >= 3)
+			is_reg_arg[2] = (instr.AFLG2 & 2) == 0;
 
 		cur += 1;
 
-		if (has_second_word) {
-			struct medea_args args = args_from_bits(code[cur]);
+		num_reg_args = is_reg_arg[0] + is_reg_arg[1] + is_reg_arg[2];
+		if (num_reg_args >= 1) {
+			struct medea_args args = args_from_bits(code[cur], num_reg_args);
 
-			printf("\t| %x %x %x %x", args.idx0, args.idx1, args.idx2);
+			printf("\t|");
+
+			if (num_reg_args >= 1)
+				printf(" %s", str_for_reg(args.arg0));
+
+			if (num_reg_args >= 2)
+				printf(" %s", str_for_reg(args.arg1));
+
+			if (num_reg_args >= 3)
+				printf(" %s", str_for_reg(args.arg2));
+
 			cur += 1;
 		}
 
 		if (instr.OPCODE == ICPY) {
-			printf("\t| %x", args_from_bits(code[cur]));
+			printf("\t| %x", code[cur]);
 			cur += 1;
 		}
 
